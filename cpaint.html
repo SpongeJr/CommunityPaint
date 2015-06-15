@@ -1,15 +1,70 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>JavaScript</title>
+  <title>CommunityPaint v0.7</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.4.8/processing.min.js"></script>
+  
+  <style>
+    #toolControlsDiv {
+        font-family: monospace;
+        font-size: 1.5em;
+        float: right;
+        width: 275px;
+    }
+    
+    #currentColorTitleDiv {
+        background-color: #000000;
+        color: #E0E0E0;
+        font-family: monospace;
+        font-size: 1em;
+        width: 64px;
+        text-align: center;
+    }
+    
+    #currentColorBlockDiv {
+        background-color: #000000;
+        color: #E0E0E0;
+        width: 64px;
+    }
+    
+    .controlDiv {
+        background-color: #D0D0D0;
+    }
+
+    .activeControlDiv {
+        background-color: #A0F0A0;
+    }
+  </style>
+  
 </head>
 <body>
-  <canvas id="canvas"></canvas>
+  <div id="titleBanner">
+      <h1><a href="https://www.khanacademy.org/computer-programming/communitypaint-dev/5019963033255936?width=640&height=480">CommunityPaint</a></h1>
+  </div>
+  <div id="currentColorTitleDiv">Current color:</div>
+  <div id="currentColorBlockDiv">&nbsp;</div>
+  <div id="mainDiv">
+    <canvas id="canvas"></canvas>
+      <div id="toolControlsDiv">
+        <span id="toolChangerSpan">
+            <button id="prevToolBtn">Prev Tool</button>
+            <button id="nextToolBtn">Next Tool</button>
+        </span>
+        <hr>
+        <span id="toolControlTitleSpan">
+            Current Tool
+        </span>
+        <hr>
+        <span id="toolControlsSpan">
+            Tool controls will go here
+        </span>
+      </div>
+  </div>
+      
   <script>
     var canvas = document.getElementById("canvas");
     var processing = new Processing(canvas, function(processing) {
-        processing.size(400, 400);
+        processing.size(300, 300);
         processing.background(0xFFF);
 
         var mouseIsPressed = false;
@@ -28,8 +83,8 @@
 
         with (processing) {
 
-
-// CommunityPaint v0.54.squish
+// CommunityPaint v0.69.squish
+//                      WORKING ON UNDO/REDO RIGHT NOW
 //
 //      A collaborative work
 //      by
@@ -40,7 +95,6 @@
 //
 //          
 //              HIT / FOR HELP
-//  ToolSetting type (?)
 
 //  Separate object for "user controls" and "tool properties"
 //  (what the user sets vs. stored tool data) (toolStorage)
@@ -52,8 +106,8 @@
 //-----------------------------------------------------------------------------
 // DATA TYPES 
 //-----------------------------------------------------------------------------
-// ToolSettings are what the user can control 
-// ToolSettings are not
+// ToolControls are what the user can control 
+// ToolStorage is for holding data not usually visible to user
 //-----------------------------------------------------------------------------
 var defaultChanger = {
     up: function(a){a++;return a;},
@@ -74,30 +128,35 @@ var ToolControl = function(
         this.changers = changers || defaultChanger;
 };
 //-----------------------------------------------------------------------------
-var ToolSetting = function(currValue){
-    this.currValue = currValue;
-    
+var defaultRoutines = {
+    dragMe: function(){
+        debugPrint("Tool has no .dragMe()!");
+    },
+    clickMe: function(){
+        debugPrint("Tool has no .clickMe()!");
+    },
+    releaseMe: function(){
+        debugPrint("Tool has no .releaseMe()!");
+    }
 };
 //-----------------------------------------------------------------------------
-var defaultRoutines = {
-    dragMe: function(){},
-    clickMe: function(){},
-    releaseMe: function(){}
-};
-
 var Tool = function(toolName, routines,
-    toolSettings, toolStorage, activeControl){
-    this.toolName = toolName;
+    toolControls, toolStorage, activeControl){
+    this.toolName = toolName || "Unnamed tool";
     this.routines = routines || defaultRoutines;
-    this.toolSettings = toolSettings;
+    this.toolControls = toolControls;
     this.toolStorage = toolStorage;
-    this.activeControl = activeControl;
+    this.activeControl = activeControl || 0;
 };
 //-----------------------------------------------------------------------------
 // CONSTANTS
 //-----------------------------------------------------------------------------
+var BLANK_CANVAS_COLOR = 0xFFF0F0F0;
+var INITIAL_TOOL = 0;
+var ENABLE_CANVAS_SAVE = true;
+var MAX_UNDO_LEVELS = 16;
 var TOOLS = [];
-var AVATAR_CANVAS = false;
+var AVATAR_CANVAS = true;
 var DEBUG_MODE = true;
 var USE_PROGRAM_UI_FOR_DEBUG_MESSAGES = true;
 //-----------------------------------------------------------------------------
@@ -113,17 +172,22 @@ var IMAGE_ARRAY = [
         getImage("cute/ChestLid"), getImage("cute/GemBlue"),
         getImage("cute/Key"), getImage("cute/StoneBlock"),
         getImage("cute/WaterBlock")
+    ],
+    [
+        getImage("space/0"), getImage("space/1"), getImage("space/2")
     ]
 ];
+// Community images to add: 
+// /computer-programming/avatar-for-community-paint/5492991269666816
 //-----------------------------------------------------------------------------
 // GLOBALS
 //-----------------------------------------------------------------------------
 var gStamp;
-var gImage;
 var gImagePixels = [];
+var gSavedCanvas = []; // holds a single canvas (for pop-up help, etc.)
 var gCanvii = []; // holds stored canvasses (or portions?)
-var gCurrentCanvas = 0;
-var gCurrentMainTool = 0;
+var gCurrentCanvas = -1;
+var gCurrentMainTool = INITIAL_TOOL;
 var gCurrentAltTool = 0;
 var gToolsShowing = false;
 var gHelpShowing = false;
@@ -132,9 +196,7 @@ var gCurrentColor = color(64, 96, 128);
 // FUNCTIONS
 //-----------------------------------------------------------------------------
 var debugPrintGUI = function(a){
-    
     pushStyle();
-    
     stroke(64,64,96);
     fill(32,32,64);
     rect(0, height * 0.9, width, height);
@@ -142,8 +204,7 @@ var debugPrintGUI = function(a){
     fill(224, 224, 224);
     textSize(height * 0.05);
     textAlign(CENTER);
-    text(a, 200, height * 0.95);
-    
+    text(a, height/2, height * 0.95);
     popStyle();
 };
 //-----------------------------------------------------------------------------
@@ -158,33 +219,59 @@ var debugPrint = function(a){
 };
 //-----------------------------------------------------------------------------
 var saveCanvas = function(){
-/*
-    Pushes the entire current canvas into the gCanvii array, like
-    a "snapshot". 
-*/
-    gCanvii.push(get(0, 0, width, height));
-    debugPrint("Saved canvas. There are now "+gCanvii.length);
-    
+    return(get(0, 0, width, height));
 };
 //-----------------------------------------------------------------------------
-var restoreCanvas = function(){
-/*
-    Called with no arguments, restores the most recently pushed canvas.
-    If you also want to decrement the gCurrentCanvas back (like for an Undo 
-    feature), you'll need to do that yourself.
-*/
+var restoreCanvas = function(whatCanvas){
     pushStyle();
     imageMode(CORNERS);
-    image(gCanvii.pop(), 0, 0, width, height);
+    image(whatCanvas, 0, 0, width, height);
     popStyle();
 };
 //-----------------------------------------------------------------------------
+var doRedo = function(){
+    if (gCurrentCanvas !== gCanvii.length-1){
+        gCurrentCanvas++;
+        restoreCanvas(gCanvii[gCurrentCanvas]);
+    }
+};
+//-----------------------------------------------------------------------------
+var doUndo = function(){
+    gCurrentCanvas--;
+    restoreCanvas(gCanvii[gCurrentCanvas]);
+};
+//-----------------------------------------------------------------------------
+var highlightActiveControl = function(whichControl){
+    showToolControls();
+    var theActiveControlDiv = document.getElementById(whichControl);
+    theActiveControlDiv.className = "activeControlDiv";
+};
+//-----------------------------------------------------------------------------
+var controlClickHandler = function(event){
+    if (event.target.id.slice(0,2) === "up"){
+        var controlArray = controlsToArray(TOOLS[gCurrentMainTool]
+            .toolControls);
+        TOOLS[gCurrentMainTool].activeControl = controlArray
+            .indexOf(event.target.id.slice(2));
+        toolControlUp();
+        
+    } else if (event.target.id.slice(0,4) === "down"){
+        var controlArray = controlsToArray(TOOLS[gCurrentMainTool]
+            .toolControls);
+        TOOLS[gCurrentMainTool].activeControl = controlArray
+            .indexOf(event.target.id.slice(4));
+        toolControlDown();
+    }
+    var theActiveControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
+    highlightActiveControl(theActiveControl);
+};
+//-----------------------------------------------------------------------------
 var toggleTerseHelp = function(){
-    
         if (gHelpShowing){
-            restoreCanvas();
+            //background(0xFFFFFF);
+            restoreCanvas(gSavedCanvas);
         } else {
-            saveCanvas();
+            gSavedCanvas = saveCanvas();
             pushStyle();
             stroke(32,32,32);
             fill(64,64,64);
@@ -201,7 +288,7 @@ var toggleTerseHelp = function(){
                 '[ and ] · change tools\n'+
                 '+ and - · change control value\n'+
                 ', and . · select control\n'+
-                'T · Show/Hide Tools window\n'+
+                'z and y · Undo / Redo\n'+
                 '/ · Show/Hide this window\n'+
                 '? · Show verbose help\n'+
                 '\nYes, these are some of the worst\n'+
@@ -211,18 +298,16 @@ var toggleTerseHelp = function(){
                 width * 0.20, height * 0.20);
             popStyle();
         }
-        
         gHelpShowing = !gHelpShowing;
-        
 };
 //-----------------------------------------------------------------------------
 var showVerboseHelp = function(){
-    // (TODO)
-    
         if(gHelpShowing){
-            restoreCanvas();   
+            restoreCanvas(gSavedCanvas);   
         } else {
-            saveCanvas();
+    
+            gSavedCanvas = saveCanvas();
+            
             pushStyle();
             stroke(32,32,32);
             fill(64,64,64);
@@ -230,14 +315,11 @@ var showVerboseHelp = function(){
             // big obnoxious help window
             rect(10, 10, width * 0.9, height * 0.9);
             textAlign(LEFT, TOP);
-            stroke(255, 0, 0);
-            fill(255, 0, 0);
-            text("In this location you will find\na bunch of help", 10, 10);
+            fill(255, 192, 192);
+            text("In this location you will find\na bunch of help someday.", 10, 10);
             popStyle();
         }
-        
         gHelpShowing = !gHelpShowing;
-        
 };
 //-----------------------------------------------------------------------------
 var eyeDropperTool = {
@@ -256,16 +338,20 @@ var eyeDropperTool = {
         stroke(r, g, b, 255);
         fill(r, g, b, 255);
         
-        pushStyle();
-        rectMode(CORNER);
-        rect(width * 0.9, height * 0.9, width * 0.05, height * 0.05);
-        popStyle();
-    
+        var theColorDiv = document.getElementById("currentColorBlockDiv");
+        theColorDiv.style["background-color"] = "rgb("+r+","+g+","+ b+")";
+        
+        if (DEBUG_MODE){
+            pushStyle();
+            rectMode(CORNER);
+            rect(width * 0.9, height * 0.9, width * 0.05, height * 0.05);
+            popStyle();
+        }
     },
     releaseMe: function(){}
 };
 //-----------------------------------------------------------------------------
-var stamperTool = new Tool('Shtamper', 
+var stamperTool = new Tool('Shtamper',
     {
         clickMe: function(){
             // if we're in "grab" mode (controlValue = 1)...
@@ -278,10 +364,10 @@ var stamperTool = new Tool('Shtamper',
             imageMode(CORNER);
             
             var theGrabMode = TOOLS[gCurrentMainTool]
-                .toolSettings.grabMode.controlValue;
+                .toolControls.grabMode.controlValue;
                 
             var theStampSize = TOOLS[gCurrentMainTool]
-                .toolSettings.stampSize.controlValue;
+                .toolControls.stampSize.controlValue;
             
             if (theGrabMode === 1) {
                 gStamp = get(mouseX - theStampSize, mouseY - theStampSize,
@@ -294,7 +380,8 @@ var stamperTool = new Tool('Shtamper',
             }
             popStyle();
         },
-        dragMe: function(){}
+        dragMe: function(){},
+        releaseMe: function(){}
     },
     {
         grabMode: new ToolControl("Grab mode",
@@ -302,8 +389,11 @@ var stamperTool = new Tool('Shtamper',
         stampSize: new ToolControl("Stamp size",
         8, 1, width)
     },
-    {},0);
+    {},
+    0);
 //-----------------------------------------------------------------------------
+// Flow multiplier currently does nothing but it does have custom changers!
+// (it's tied to .toolStorage.flow which isn't used yet)
 var sprayerTool = new Tool('Shprayer', {
     dragMe: function(){
         var x = mouseX;
@@ -311,99 +401,92 @@ var sprayerTool = new Tool('Shprayer', {
 
         // add opacity to current stroke & fill color
         // there is a better way to do this, right?!
-        //color(gCurrentColor);
         var r = red(gCurrentColor);
         var g = green(gCurrentColor);
         var b = blue(gCurrentColor);
         var theNewColor = color(r,g,b,
-            TOOLS[gCurrentMainTool].toolSettings.opacity.controlValue
+            TOOLS[gCurrentMainTool].toolControls.opacity.controlValue
         );
         fill (theNewColor);
         stroke (theNewColor);
     
-        ellipse(x, y,
-            sprayerTool.toolSettings.radius.controlValue,
-            sprayerTool.toolSettings.radius.controlValue);
+        var theRadius = sprayerTool.toolControls.radius.controlValue;
+    
+        ellipse(x, y, theRadius, theRadius);
     },
     clickMe: function(){
         var x = mouseX;
         var y = mouseY;
         pushStyle();
-        
-        ellipse(x, y,
-            sprayerTool.toolSettings
-            .penFlow.controlValue*0.15, 
-            sprayerTool.toolSettings
-            .penFlow.controlValue*0.15);
-            
+        var theRadius = sprayerTool.toolControls.radius.controlValue;
+        ellipse(x, y, theRadius, theRadius);
         popStyle();
     },
     releaseMe: function(){
-        sprayerTool.toolSettings
-            .penFlow.controlValue = 1;}},
-    {   
-        flowMult: new ToolControl ("Flow Multipler thing",
+        sprayerTool.toolStorage.flow = 0.01;}},
+    {
+        flowMult: new ToolControl ("Flow Multiplier",
             1.1, 1.0, 8.0, {
                 up: function(a){a = a * 1.05;return a;},
                 down: function(a){a = a * 0.95;return a;}}),
         radius: new ToolControl ("Radius",
             8, 1, width/16),
-        penFlow: new ToolControl ("Pen Flow",
-            8, 1, 20),
         opacity: new ToolControl ("Opacity",
             192, 1, 255)
     },
-    {},0);
+    {
+        flow: 0.01
+    },
+    0);
 //-----------------------------------------------------------------------------
-var splatterTool = new Tool('Shplatter',{
-    
+var splatterTool = new Tool('Shplatter',
+    {
     clickMe: function(){
         var x = mouseX;
         var y = mouseY;
-        
     },
     dragMe: function(){
         var x = mouseX;
         var y = mouseY;
-        
         var xCoord;
         var yCoord;
-        var theRadius = splatterTool.toolSettings.radius.controlValue;
-        var theSplatSize = splatterTool.toolSettings.splatSize.controlValue;
+        var theRadius = splatterTool.toolControls.radius.controlValue;
+        var theSplatSize = splatterTool.toolControls.splatSize.controlValue;
 
-        for (var i=0; i < splatterTool.toolSettings.splatCount.controlValue; i++){
+        for (var i=0; i < splatterTool.toolControls.splatCount.controlValue; i++){
             xCoord = random(-theRadius, theRadius);
             yCoord = random(-theRadius, theRadius);
             
             strokeWeight(theSplatSize);
             point(x + xCoord, y + yCoord);
-    }}},{
-        flowMult: new ToolControl ("Flow multiplier",
-            1.1, 1.0, 8.0, {
-                up: function(a){a = a + 0.05;return a;},
-                down: function(a){a = a - 0.05;return a;}
-            }),
+        }
+    },
+    releaseMe: function(){}
+    },
+    {
         radius: new ToolControl ("Radius",
             4, 1, width/8),
         splatCount: new ToolControl ("Splat count",
             5, 1, 25),
         splatSize: new ToolControl ("Splat size",
             3, 1, width/32)
-        },
-    {},0);
+    },
+    {},
+    0);
 //-----------------------------------------------------------------------------
-var confettiTool = new Tool('Confetti!', {
+var confettiTool = new Tool('Confetti!',
+    { 
     dragMe: function(){
         var x = mouseX;
         var y = mouseY;
         var theFlakeSize = TOOLS[gCurrentMainTool]
-            .toolSettings.flakeSize.controlValue;
+            .toolControls.flakeSize.controlValue;
         
         var theRadius = TOOLS[gCurrentMainTool]
-            .toolSettings.radius.controlValue;
+            .toolControls.radius.controlValue;
      
         var theOpacity = TOOLS[gCurrentMainTool]
-            .toolSettings.opacity.controlValue;
+            .toolControls.opacity.controlValue;
      
         pushStyle();
         
@@ -419,7 +502,8 @@ var confettiTool = new Tool('Confetti!', {
         line(x1, y1, x2, y2);
 
         popStyle();},
-    clickMe: function(){}
+    clickMe: function(){},
+    releaseMe: function(){}
     },
     {
         flakeSize: new ToolControl ("Flake size",
@@ -429,45 +513,54 @@ var confettiTool = new Tool('Confetti!', {
         opacity: new ToolControl ("Opacity",
             128, 1, 255)
     },
-    {},0);
+    {},
+    0);
 //-----------------------------------------------------------------------------
-var imageTool = new Tool("Image tool",
+// the .maxValue of .imageNum is currently hardcoded at 6
+// this is, of course, terrible
+// I believe I painted myself into a corner
+var imageTool = new Tool('Image tool',
     {
         clickMe: function(){
-        pushStyle();
-        imageMode(CENTER);
-        
-        // YOU ARE WORKING ON THE ARRAY OF ARRAYS THING
-        // Obvious exits lead: Nowhere.
-        //println("the length of that array is "+IMAGE_ARRAY[TOOLS[3].toolSettings.imageSet.controlValue].length);
-        
-        var theImage = IMAGE_ARRAY[TOOLS[gCurrentMainTool]
-        .toolSettings.imageSet.controlValue]
-        [imageTool.toolSettings.imageNum.controlValue];
-        
-        image(theImage,
-            mouseX, mouseY,
-            imageTool.toolSettings.imageSize.controlValue,
-            imageTool.toolSettings.imageSize.controlValue);
-        popStyle();
+            pushStyle();
+            imageMode(CENTER);
+            
+            var theImage;
+            
+            if (TOOLS[gCurrentMainTool]
+                .toolControls.randomImages.controlValue){
+                theImage = IMAGE_ARRAY[imageTool.toolControls.imageSet.controlValue]
+                    [floor(random(0, IMAGE_ARRAY[TOOLS[gCurrentMainTool]
+                    .toolControls.imageSet.controlValue].length))];
+            } else {
+                theImage = IMAGE_ARRAY[TOOLS[gCurrentMainTool]
+                .toolControls.imageSet.controlValue]
+                [imageTool.toolControls.imageNum.controlValue];
+            }
+
+            image(theImage,
+                mouseX, mouseY,
+                imageTool.toolControls.imageSize.controlValue,
+                imageTool.toolControls.imageSize.controlValue);
+            popStyle();
     },
         dragMe: function(){
             
-        if (TOOLS[gCurrentMainTool].toolSettings
-            .allowDrag.controlValue === 1){
-            pushStyle();
-            imageMode(CENTER);
-            image(IMAGE_ARRAY[imageTool.toolSettings.imageNum.controlValue],
-                mouseX, mouseY,
-                imageTool.toolSettings.imageSize.controlValue,
-                imageTool.toolSettings.imageSize.controlValue);
-            popStyle();
-            } else {
-                // for possible future stuff
+            if (TOOLS[gCurrentMainTool].toolControls
+                .allowDrag.controlValue === 1){
+                    imageTool.toolStorage.spaceCount = (imageTool.
+                        toolStorage.spaceCount + 1) %
+                        imageTool.toolControls.spacing.controlValue;
+                if (imageTool.toolStorage.spaceCount === 0){
+                    imageTool.routines.clickMe();
+                }
             }
-        }
-    },
+        },
+        releaseMe: function(){}
+        },
     {
+        randomImages: new ToolControl ("Use random images?",
+            0, 0, 1),
         imageNum: new ToolControl ("Image choice",
             0, 0, 6),
         imageSize: new ToolControl ("Image size",
@@ -475,25 +568,75 @@ var imageTool = new Tool("Image tool",
         allowDrag: new ToolControl ("Allow dragging",
             0, 0, 1),
         imageSet: new ToolControl ("Image set",
-            0, 0, IMAGE_ARRAY.length-1)
+            0, 0, IMAGE_ARRAY.length-1),
+        spacing: new ToolControl ("Spacing",
+            1, 1, width/4)
     },
-    {},0);
+    {
+        spaceCount: 0
+    },
+    0);
 //-----------------------------------------------------------------------------
-var toolWindowToggle = function(){
-
-    gToolsShowing = !gToolsShowing;
-    
-    if (gToolsShowing){
-        restoreCanvas();
-    } else {
-        saveCanvas();
-        pushStyle();
-        stroke(32,32,32);
-        fill(64,64,64);
-  
-        rect(10, 10, width * 0.9, height * 0.9);
-
-        popStyle();
+// Radius and Opacity do nothing yet on the Experimental Shplatter
+var newSplatterTool = new Tool('Experimental Shplatter',
+    {
+        clickMe: function() {},
+        dragMe: function() {
+            var x = mouseX;
+            var y = mouseY;
+            
+            theTool = TOOLS[gCurrentMainTool];
+            theFlow = theTool.toolStorage.flow;
+            theFlow = theFlow + 0.05;
+            theFlow = theFlow % 360;
+            fill(gCurrentColor);
+            stroke(gCurrentColor);
+            ellipse(x, y, 10 + sin(theFlow) * 10, 10 + sin(theFlow) * 10);
+            theTool.toolStorage.flow = theFlow;
+        },
+        releaseMe: function() {
+            theTool = TOOLS[gCurrentMainTool];
+            theTool.toolStorage.flow = 0;
+        }
+    },
+    {
+        radius: new ToolControl ("Radius",
+            1, 1, 64),
+        opacity: new ToolControl ("Opacity",
+            192, 1, 255)
+    },
+    {
+        flow: 0
+    },
+    0);
+//-----------------------------------------------------------------------------
+var showToolControls = function(){
+    var tctSpan = document.getElementById("toolControlTitleSpan");
+    tctSpan.innerText = TOOLS[gCurrentMainTool].toolName;
+    var theDiv = document.getElementById("toolControlsSpan");
+    theDiv.innerText = "";
+    for (var theControl in TOOLS[gCurrentMainTool].toolControls){
+        var theNewDiv = document.createElement("div");
+        theNewDiv.className = "controlDiv";
+        var theUpButton = document.createElement("button");
+        var theDownButton = document.createElement("button");
+        
+        theUpButton.className = "controlButton";
+        theDownButton.className = "controlButton";
+        theUpButton.id = "up"+theControl;
+        theDownButton.id = "down"+theControl;
+        theUpButton.textContent = "+";
+        theDownButton.textContent = "-";
+        theUpButton.addEventListener("mousedown", controlClickHandler);
+        theDownButton.addEventListener("mousedown", controlClickHandler);
+        
+        theNewDiv.id = theControl;
+        theNewDiv.textContent = TOOLS[gCurrentMainTool]
+            .toolControls[theControl].friendlyName 
+            +"\n";
+        theNewDiv.appendChild(theDownButton);
+        theNewDiv.appendChild(theUpButton);
+        theDiv.appendChild(theNewDiv);
     }
 };
 //-----------------------------------------------------------------------------
@@ -506,7 +649,7 @@ var currentClick = function(){
 };
 //-----------------------------------------------------------------------------
 var currentRelease = function(){
-    TOOLS[gCurrentMainTool].releaseMe();
+    TOOLS[gCurrentMainTool].routines.releaseMe();
 };
 //-----------------------------------------------------------------------------
 var doCurrentTool = {
@@ -521,14 +664,11 @@ var doAlternateTool = {
     releaseMe: function(){}
 };
 //-----------------------------------------------------------------------------
-var toolPicker = {};
-//-----------------------------------------------------------------------------
 var controlsToArray = function(theControls){
     var controlArray = [];
     for (var theControl in theControls){
         controlArray.push(theControl);
     }
-    
     return controlArray;
 };
 //-----------------------------------------------------------------------------
@@ -538,11 +678,11 @@ var changeControl = function(howToChange){
     // changes THE VALUE of the active control of the current main tool
     // to change the active control, you want doNextControl/doPrevControl
 
-    var controlArray = controlsToArray(TOOLS[gCurrentMainTool].toolSettings);
+    var controlArray = controlsToArray(TOOLS[gCurrentMainTool].toolControls);
     var theActiveControl = TOOLS[gCurrentMainTool].activeControl;
     
     theActiveControl = controlArray[theActiveControl];
-    var theSettings = TOOLS[gCurrentMainTool].toolSettings; 
+    var theSettings = TOOLS[gCurrentMainTool].toolControls; 
     var theControlValue = theSettings[theActiveControl].controlValue;
     
     theControlValue = howToChange(theControlValue);
@@ -561,63 +701,87 @@ var changeControl = function(howToChange){
 //-----------------------------------------------------------------------------
 var doPrevControl = function(){
     var controlArray = controlsToArray(TOOLS[gCurrentMainTool]
-        .toolSettings);    
+        .toolControls);
     TOOLS[gCurrentMainTool].activeControl--;
     
     if (TOOLS[gCurrentMainTool].activeControl < 0) {
         TOOLS[gCurrentMainTool].activeControl += controlArray.length;
     }
     
+    var theActiveControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
+ 
+    highlightActiveControl(theActiveControl);
+ 
     debugPrint("The active control is: "+
-        controlArray[TOOLS[gCurrentMainTool].activeControl]);
+        TOOLS[gCurrentMainTool].toolControls[theActiveControl].friendlyName);
 };
 //-----------------------------------------------------------------------------
 var doNextControl = function(){
 
     var controlArray = controlsToArray(TOOLS[gCurrentMainTool]
-        .toolSettings);
+        .toolControls);
 
     TOOLS[gCurrentMainTool].activeControl = (TOOLS[gCurrentMainTool].
         activeControl + 1) % controlArray.length;
         
     var theActiveControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
     
+    highlightActiveControl(theActiveControl);
+    
     debugPrint("The active control is: " +
-        TOOLS[gCurrentMainTool].toolSettings[theActiveControl].friendlyName);
+        TOOLS[gCurrentMainTool].toolControls[theActiveControl].friendlyName);
 };
 //-----------------------------------------------------------------------------
-var userSaveCanvas = function(){
-    saveCanvas();
-    debugPrint("Saved current canvas.");
+var toolControlUp = function(){
+    var controlArray = controlsToArray(
+        TOOLS[gCurrentMainTool].toolControls);
+    var whichControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
+    changeControl(TOOLS[gCurrentMainTool]
+        .toolControls[whichControl].changers.up);
 };
 //-----------------------------------------------------------------------------
-var userLoadCanvas = function(){
-    restoreCanvas();
-    debugPrint("Loaded last canvas. There are now "+gCanvii.length);
+var toolControlDown = function(){
+    var controlArray = controlsToArray(
+        TOOLS[gCurrentMainTool].toolControls);
+    var whichControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
+    changeControl(TOOLS[gCurrentMainTool]
+        .toolControls[whichControl].changers.down);
+};
+//-----------------------------------------------------------------------------
+var doNextTool = function(){
+    gCurrentMainTool = (gCurrentMainTool - 1);
+    if (gCurrentMainTool < 0){
+        gCurrentMainTool += TOOLS.length;
+    }
+    debugPrint("Switched main to "+
+        TOOLS[gCurrentMainTool].toolName);
+    showToolControls();
+};
+//-----------------------------------------------------------------------------
+var doPrevTool = function(){
+    gCurrentMainTool = (gCurrentMainTool + 1) % TOOLS.length;
+    debugPrint("Switched main to "+
+        TOOLS[gCurrentMainTool].toolName);
+    showToolControls();
 };
 //-----------------------------------------------------------------------------
 keyTyped = function(){
-    
     var theKey = key;
-    
     /*
         KEY SETTINGS
-        (until tool settings dialog functionality is implemented --
-            waiting on a restoreCanvas() mainly for that
     ----------------------------------------------------------------------
-        [           Change main tool (LMB)
-        ]           Change alt tool (RMB)
+        [           Change to prev tool
+        ]           Change to next tool
         /           Show help (terse)
         ?           Show help (verbose)
         +           Adjust main tool control up
         -           Adjust main tool control down
-        
-        T           Show/hide Tools window
+
         ,           Prev tool control
         .           Next tool control
         
-        S           Save canvas (push)
-        L           Load canvas (pop)
+        Y           Redo
+        Z           Undo
     */
 
     // key is an object, let's make it a string
@@ -626,17 +790,10 @@ keyTyped = function(){
     
     switch (theKey) {
         case '[':
-            gCurrentMainTool = (gCurrentMainTool - 1);
-            if (gCurrentMainTool < 0){
-                gCurrentMainTool += TOOLS.length;
-            }
-            debugPrint("Switched main to "+
-                TOOLS[gCurrentMainTool].toolName);
+            doPrevTool();
             break;
         case ']':
-            gCurrentMainTool = (gCurrentMainTool + 1) % TOOLS.length;
-            debugPrint("Switched main to "+
-                TOOLS[gCurrentMainTool].toolName);
+            doNextTool();
             break;
         case '/':
               toggleTerseHelp();
@@ -646,33 +803,22 @@ keyTyped = function(){
             showVerboseHelp();
             break;
         case '+':
-            var controlArray = controlsToArray(
-                TOOLS[gCurrentMainTool].toolSettings);
-            var whichControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
-            changeControl(TOOLS[gCurrentMainTool]
-                .toolSettings[whichControl].changers.up);
+            toolControlUp();
             break;
         case '-':
-            var controlArray = controlsToArray(
-                TOOLS[gCurrentMainTool].toolSettings);
-            var whichControl = controlArray[TOOLS[gCurrentMainTool].activeControl];
-            changeControl(TOOLS[gCurrentMainTool]
-                .toolSettings[whichControl].changers.down);
+            toolControlDown();
             break;
         case ',':
             doPrevControl();
             break;
         case '.':
             doNextControl();
+            break;    
+        case 'y':
+            doRedo();
             break;
-        case 't':
-            toolWindowToggle();
-            break;
-        case 's':
-            userSaveCanvas();
-            break;
-        case 'l':
-            userLoadCanvas();
+        case 'z':
+            doUndo();
             break;
         default:
     }
@@ -680,16 +826,24 @@ keyTyped = function(){
 //-----------------------------------------------------------------------------
 mouseReleased = function(){
     if (mouseButton === LEFT) {
-        saveCanvas();
-        debugPrint("Saved canvas. There are now "+gCanvii.length);
-        //doCurrentTool.releaseMe();
+        if (ENABLE_CANVAS_SAVE){
+            if (gCurrentCanvas !== gCanvii.length-1){
+                // we are NOT at the end of the undo array,
+                // so we can scrap everything after this point
+                gCanvii = gCanvii.slice(0, gCurrentCanvas+1);
+            }
+            gCanvii.push(saveCanvas());
+            gCurrentCanvas++;
+            doCurrentTool.releaseMe()
+        } else {
+            doCurrentTool.releaseMe();
+        }
     } else if (mouseButton === RIGHT){
         doAlternateTool.releaseMe();
     }
 };
 //-----------------------------------------------------------------------------
 mouseClicked = function(){
- 
     if (mouseButton === LEFT) {
         doCurrentTool.clickMe();
     } else if (mouseButton === CENTER) {
@@ -702,10 +856,8 @@ mouseClicked = function(){
 };
 //-----------------------------------------------------------------------------
 mouseDragged = function(){
-    
     var x = mouseX;
     var y = mouseY;
-
     if (mouseButton === LEFT){
         doCurrentTool.dragMe();
     } else if (mouseButton === RIGHT){
@@ -714,7 +866,6 @@ mouseDragged = function(){
 };
 //-----------------------------------------------------------------------------
 var drawColorWheel = function(){
-    
     pushStyle();
     colorMode(HSB);
     for(var  x = width; x >= 0; x--){
@@ -727,9 +878,8 @@ var drawColorWheel = function(){
 };
 //-----------------------------------------------------------------------------
 var setupCanvas = function(){
-    
+    background(BLANK_CANVAS_COLOR);
     drawColorWheel();
-
     if (AVATAR_CANVAS) {
         var tempImages = [getImage("creatures/Hopper-Jumping"),
             getImage("avatars/old-spice-man"), getImage("avatars/piceratops-tree"),
@@ -745,14 +895,30 @@ var setupCanvas = function(){
     }
 };
 //-----------------------------------------------------------------------------
+var nextToolClickHandler = function(){
+    doNextTool();
+};
+//-----------------------------------------------------------------------------
+var prevToolClickHandler = function(){
+    doPrevTool();
+};
+//-----------------------------------------------------------------------------
 var setupTools = function(){
     TOOLS = [
         sprayerTool,
         splatterTool,
         confettiTool,
         imageTool,
-        stamperTool
+        stamperTool,
+        newSplatterTool
     ];
+    
+    var theNextBtn = document.getElementById("nextToolBtn");
+    var thePrevBtn = document.getElementById("prevToolBtn");
+    theNextBtn.addEventListener("click", nextToolClickHandler);
+    thePrevBtn.addEventListener("click", prevToolClickHandler);
+    showToolControls();
+    
 };
 //-----------------------------------------------------------------------------
 var setupColor = function(){
@@ -761,9 +927,7 @@ var setupColor = function(){
 };
 //-----------------------------------------------------------------------------
 var initProgram = function() {
-  
-  // Do not uncomment if you are editing the code.
-  //saveCanvas();
+  angleMode = "degrees";
 
   fill(0, 0, 0, 32);
   stroke(0, 0, 0, 32);
@@ -773,7 +937,6 @@ var initProgram = function() {
   setupCanvas();
   setupTools();
   setupColor();
-  
 };
 //-----------------------------------------------------------------------------
 initProgram();
@@ -781,7 +944,7 @@ initProgram();
 /*
 The MIT License (MIT)
 
-Copyright (c) 2015 various Khan Academy learners
+Copyright (c) 2015 @spongejr and various Khan Academy learners
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -802,9 +965,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-
         }
-        if (typeof draw !== 'undefined') processing.draw = draw;
+    if (typeof draw !== 'undefined') processing.draw = draw;
     });
   </script>
 </body>
