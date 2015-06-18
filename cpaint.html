@@ -39,7 +39,7 @@
 </head>
 <body>
   <div id="titleBanner">
-      <h1><a href="https://www.khanacademy.org/computer-programming/communitypaint-dev/5019963033255936?width=640&height=480">CommunityPaint</a></h1>
+      <h1><a href="https://www.khanacademy.org/computer-programming/communitypaint-v07/4620018295898112?width=640&height=480">CommunityPaint</a></h1>
   </div>
   <div id="currentColorTitleDiv">Current color:</div>
   <div id="currentColorBlockDiv">&nbsp;</div>
@@ -62,6 +62,7 @@
   </div>
       
   <script>
+  
     var canvas = document.getElementById("canvas");
     var processing = new Processing(canvas, function(processing) {
         processing.size(300, 300);
@@ -83,8 +84,8 @@
 
         with (processing) {
 
-// CommunityPaint v0.69.squish
-//                      WORKING ON UNDO/REDO RIGHT NOW
+// CommunityPaint v0.73.squish
+//                      WORKING ON: CLONE BRUSH
 //
 //      A collaborative work
 //      by
@@ -268,7 +269,6 @@ var controlClickHandler = function(event){
 //-----------------------------------------------------------------------------
 var toggleTerseHelp = function(){
         if (gHelpShowing){
-            //background(0xFFFFFF);
             restoreCanvas(gSavedCanvas);
         } else {
             gSavedCanvas = saveCanvas();
@@ -285,10 +285,11 @@ var toggleTerseHelp = function(){
             fill(240,240,240);
             textSize(height * 0.04);
             text('Terse Help\n\n'+
+                'right mouse button · eyedropper\n'+
                 '[ and ] · change tools\n'+
                 '+ and - · change control value\n'+
                 ', and . · select control\n'+
-                'z and y · Undo / Redo\n'+
+                'z and y · undo / redo\n'+
                 '/ · Show/Hide this window\n'+
                 '? · Show verbose help\n'+
                 '\nYes, these are some of the worst\n'+
@@ -610,6 +611,90 @@ var newSplatterTool = new Tool('Experimental Shplatter',
     },
     0);
 //-----------------------------------------------------------------------------
+var cloneBrushTool = new Tool('Clone Brush',
+    {
+        clickMe: function() {
+            if (cloneBrushTool.toolControls.targetMode.controlValue === 1){
+                cloneBrushTool.toolStorage.source.x = mouseX;
+                cloneBrushTool.toolStorage.source.y = mouseY;
+                cloneBrushTool.toolStorage.destinationSet = false;
+                debugPrint("Source set ("+mouseX+", "+mouseY+")");
+            } else {
+                var x = mouseX;
+                var y = mouseY;
+                if (!cloneBrushTool.toolStorage.destinationSet){
+                    cloneBrushTool.toolStorage.destination.x = x;
+                    cloneBrushTool.toolStorage.destination.y = y;
+                    cloneBrushTool.toolStorage.destinationSet = true;
+                }
+                
+                deltaX = x - cloneBrushTool.toolStorage.destination.x;
+                deltaY = y - cloneBrushTool.toolStorage.destination.y;
+                
+                pushStyle();
+                imageMode(CORNER);
+                var theSize = cloneBrushTool.toolControls.size.controlValue;
+                var pixelsToGrab = get(
+                    cloneBrushTool.toolStorage.source.x + deltaX,
+                    cloneBrushTool.toolStorage.source.y + deltaY,
+                    theSize,  
+                    theSize);
+                image(pixelsToGrab, x, y, theSize, theSize);
+                popStyle();
+            }
+        },
+        dragMe: function() {
+            cloneBrushTool.routines.clickMe();
+        },
+        releaseMe: function(){
+            
+        }
+    },
+    {
+        targetMode: new ToolControl("Targetting Mode",
+        1, 0, 1),
+        size: new ToolControl("Size",
+        8, 1, 64
+        )
+    },
+    {
+        source: {x: 0, y: 0},
+        destination: {x: 0, y: 0},
+        destinationSet: false
+    },
+    0);
+//-----------------------------------------------------------------------------
+/*
+var shadeTool = new Tool('Shading Tool',
+    {
+        clickMe: function(){
+            x = mouseX;
+            y = mouseY;
+            
+            pushStyle();
+            imageMode(CORNER)
+            var theSize = shadeTool.toolControls.size.controlValue;
+            var theSelection = get(x, y, theSize, theSize);
+            tint(shadeTool.toolControls.greyValue.controlValue);
+            image(theSelection, x, y, theSize, theSize);
+            noTint();
+            popStyle();
+        },
+        dragMe: function(){
+            shadeTool.routines.clickMe();
+        },
+        releaseMe: function(){}
+    },
+    {
+        greyValue: new ToolControl("Grey value",
+        255, 0, 255),
+        size: new ToolControl("Size",
+        4, 1, 64)
+    },
+    {},
+    0);
+*/
+//-----------------------------------------------------------------------------
 var showToolControls = function(){
     var tctSpan = document.getElementById("toolControlTitleSpan");
     tctSpan.innerText = TOOLS[gCurrentMainTool].toolName;
@@ -910,7 +995,8 @@ var setupTools = function(){
         confettiTool,
         imageTool,
         stamperTool,
-        newSplatterTool
+        newSplatterTool,
+        cloneBrushTool,
     ];
     
     var theNextBtn = document.getElementById("nextToolBtn");
