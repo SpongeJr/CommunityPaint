@@ -30,7 +30,6 @@
     .controlDiv {
         background-color: #D0D0D0;
     }
-
     .activeControlDiv {
         background-color: #A0F0A0;
     }
@@ -67,23 +66,18 @@
     var processing = new Processing(canvas, function(processing) {
         processing.size(300, 300);
         processing.background(0xFFF);
-
         var mouseIsPressed = false;
         processing.mousePressed = function () { mouseIsPressed = true; };
         processing.mouseReleased = function () { mouseIsPressed = false; };
-
         var keyIsPressed = false;
         processing.keyPressed = function () { keyIsPressed = true; };
         processing.keyReleased = function () { keyIsPressed = false; };
-
         function getImage(s) {
             var url = "https://www.kasandbox.org/programming-images/" + s + ".png";
             processing.externals.sketch.imageCache.add(url);
             return processing.loadImage(url);
         }
-
         with (processing) {
-
 // CommunityPaint v0.73.squish
 //                      WORKING ON: CLONE BRUSH
 //
@@ -96,14 +90,11 @@
 //
 //          
 //              HIT / FOR HELP
-
 //  Separate object for "user controls" and "tool properties"
 //  (what the user sets vs. stored tool data) (toolStorage)
-
 // Left click to draw
 // Hit / for help!
 // Right click for alternate tool feature (currently eyedropper)
-
 //-----------------------------------------------------------------------------
 // DATA TYPES 
 //-----------------------------------------------------------------------------
@@ -399,7 +390,6 @@ var sprayerTool = new Tool('Shprayer', {
     dragMe: function(){
         var x = mouseX;
         var y = mouseY;
-
         // add opacity to current stroke & fill color
         // there is a better way to do this, right?!
         var r = red(gCurrentColor);
@@ -453,7 +443,6 @@ var splatterTool = new Tool('Shplatter',
         var yCoord;
         var theRadius = splatterTool.toolControls.radius.controlValue;
         var theSplatSize = splatterTool.toolControls.splatSize.controlValue;
-
         for (var i=0; i < splatterTool.toolControls.splatCount.controlValue; i++){
             xCoord = random(-theRadius, theRadius);
             yCoord = random(-theRadius, theRadius);
@@ -501,7 +490,6 @@ var confettiTool = new Tool('Confetti!',
         var y2 = random(-theRadius, theRadius) + y;
     
         line(x1, y1, x2, y2);
-
         popStyle();},
     clickMe: function(){},
     releaseMe: function(){}
@@ -538,7 +526,6 @@ var imageTool = new Tool('Image tool',
                 .toolControls.imageSet.controlValue]
                 [imageTool.toolControls.imageNum.controlValue];
             }
-
             image(theImage,
                 mouseX, mouseY,
                 imageTool.toolControls.imageSize.controlValue,
@@ -762,7 +749,6 @@ var changeControl = function(howToChange){
     // (i.e., increment, decrement, logarithmic change, etc.)
     // changes THE VALUE of the active control of the current main tool
     // to change the active control, you want doNextControl/doPrevControl
-
     var controlArray = controlsToArray(TOOLS[gCurrentMainTool].toolControls);
     var theActiveControl = TOOLS[gCurrentMainTool].activeControl;
     
@@ -771,11 +757,9 @@ var changeControl = function(howToChange){
     var theControlValue = theSettings[theActiveControl].controlValue;
     
     theControlValue = howToChange(theControlValue);
-
     theControlValue = constrain(theControlValue,
         theSettings[theActiveControl].minValue,
         theSettings[theActiveControl].maxValue);
-
     debugPrint(
         theActiveControl + " of " +
         TOOLS[gCurrentMainTool].toolName +
@@ -802,10 +786,8 @@ var doPrevControl = function(){
 };
 //-----------------------------------------------------------------------------
 var doNextControl = function(){
-
     var controlArray = controlsToArray(TOOLS[gCurrentMainTool]
         .toolControls);
-
     TOOLS[gCurrentMainTool].activeControl = (TOOLS[gCurrentMainTool].
         activeControl + 1) % controlArray.length;
         
@@ -861,14 +843,12 @@ keyTyped = function(){
         ?           Show help (verbose)
         +           Adjust main tool control up
         -           Adjust main tool control down
-
         ,           Prev tool control
         .           Next tool control
         
         Y           Redo
         Z           Undo
     */
-
     // key is an object, let's make it a string
     // that will let us do our thing
     theKey = theKey.toString();
@@ -1014,7 +994,6 @@ var setupColor = function(){
 //-----------------------------------------------------------------------------
 var initProgram = function() {
   angleMode = "degrees";
-
   fill(0, 0, 0, 32);
   stroke(0, 0, 0, 32);
   strokeWeight(1);
@@ -1026,22 +1005,17 @@ var initProgram = function() {
 };
 //-----------------------------------------------------------------------------
 initProgram();
-
 /*
 The MIT License (MIT)
-
 Copyright (c) 2015 @spongejr and various Khan Academy learners
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
-
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -1050,7 +1024,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-
         }
     if (typeof draw !== 'undefined') processing.draw = draw;
     });
