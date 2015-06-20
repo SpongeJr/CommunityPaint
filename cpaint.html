@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>CommunityPaint v0.75</title>
+  <title>CommunityPaint v0.7</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.4.8/processing.min.js"></script>
   
   <style>
@@ -78,7 +78,8 @@
             return processing.loadImage(url);
         }
         with (processing) {
-// CommunityPaint v0.75
+// CommunityPaint v0.73.squish
+//                      WORKING ON: CLONE BRUSH
 //
 //      A collaborative work
 //      by
@@ -145,16 +146,7 @@ var Tool = function(toolName, routines,
 var BLANK_CANVAS_COLOR = 0xFFF0F0F0;
 var INITIAL_TOOL = 0;
 var ENABLE_CANVAS_SAVE = true;
-var UNDO_MEMORY_LIMIT = 65535; // in kilobytes
-/*
-    CANVAS_HEIGHT and CANVAS_WIDTH are hardcoded for now,
-    as width and height seem to be not defined yet when
-    MAX_UNDO_LEVELS is determined below.
-    
-*/
-var CANVAS_HEIGHT = 300;
-var CANVAS_WIDTH = 300;
-var MAX_UNDO_LEVELS = (UNDO_MEMORY_LIMIT * 1024) / (CANVAS_HEIGHT * CANVAS_WIDTH * 3);
+var MAX_UNDO_LEVELS = 16;
 var TOOLS = [];
 var AVATAR_CANVAS = true;
 var DEBUG_MODE = true;
@@ -237,12 +229,8 @@ var doRedo = function(){
 };
 //-----------------------------------------------------------------------------
 var doUndo = function(){
-    if (gCurrentCanvas > 0){
-        gCurrentCanvas--;
-        restoreCanvas(gCanvii[gCurrentCanvas]);
-    } else {
-        debugPrint("No Undo For You");
-    }
+    gCurrentCanvas--;
+    restoreCanvas(gCanvii[gCurrentCanvas]);
 };
 //-----------------------------------------------------------------------------
 var highlightActiveControl = function(whichControl){
@@ -396,39 +384,33 @@ var stamperTool = new Tool('Shtamper',
     {},
     0);
 //-----------------------------------------------------------------------------
+// Flow multiplier currently does nothing but it does have custom changers!
+// (it's tied to .toolStorage.flow which isn't used yet)
 var sprayerTool = new Tool('Shprayer', {
     dragMe: function(){
-
-        sprayerTool.toolStorage.flow += sprayerTool.toolControls
-            .flowMult.controlValue / 100;
-        sprayerTool.toolStorage.flow = constrain(sprayerTool
-            .toolStorage.flow, 0.01, 1);
-
         var x = mouseX;
         var y = mouseY;
+        // add opacity to current stroke & fill color
+        // there is a better way to do this, right?!
         var r = red(gCurrentColor);
         var g = green(gCurrentColor);
         var b = blue(gCurrentColor);
-        var opacity = TOOLS[gCurrentMainTool].toolControls.opacity.controlValue;
-        opacity = opacity * sprayerTool.toolStorage.flow;
-        
-        var theNewColor = color(r,g,b,opacity);
+        var theNewColor = color(r,g,b,
+            TOOLS[gCurrentMainTool].toolControls.opacity.controlValue
+        );
         fill (theNewColor);
         stroke (theNewColor);
     
         var theRadius = sprayerTool.toolControls.radius.controlValue;
-        ellipse(x, y,
-            theRadius * sprayerTool.toolStorage.flow,
-            theRadius * sprayerTool.toolStorage.flow);
+    
+        ellipse(x, y, theRadius, theRadius);
     },
     clickMe: function(){
         var x = mouseX;
         var y = mouseY;
         pushStyle();
         var theRadius = sprayerTool.toolControls.radius.controlValue;
-        ellipse(x, y,
-            theRadius * sprayerTool.toolStorage.flow,
-            theRadius * sprayerTool.toolStorage.flow);
+        ellipse(x, y, theRadius, theRadius);
         popStyle();
     },
     releaseMe: function(){
@@ -439,13 +421,12 @@ var sprayerTool = new Tool('Shprayer', {
                 up: function(a){a = a * 1.05;return a;},
                 down: function(a){a = a * 0.95;return a;}}),
         radius: new ToolControl ("Radius",
-            8, 1, width / 6),
+            8, 1, width/16),
         opacity: new ToolControl ("Opacity",
             192, 1, 255)
     },
     {
-        flow: 0.01,
-        
+        flow: 0.01
     },
     0);
 //-----------------------------------------------------------------------------
@@ -571,16 +552,49 @@ var imageTool = new Tool('Image tool',
         imageNum: new ToolControl ("Image choice",
             0, 0, 6),
         imageSize: new ToolControl ("Image size",
-            16, 1, width/4),
+            16, 1, width/8),
         allowDrag: new ToolControl ("Allow dragging",
             0, 0, 1),
         imageSet: new ToolControl ("Image set",
             0, 0, IMAGE_ARRAY.length-1),
         spacing: new ToolControl ("Spacing",
-            1, 1, width / 4)
+            1, 1, width/4)
     },
     {
         spaceCount: 0
+    },
+    0);
+//-----------------------------------------------------------------------------
+// Radius and Opacity do nothing yet on the Experimental Shplatter
+var newSplatterTool = new Tool('Experimental Shplatter',
+    {
+        clickMe: function() {},
+        dragMe: function() {
+            var x = mouseX;
+            var y = mouseY;
+            
+            theTool = TOOLS[gCurrentMainTool];
+            theFlow = theTool.toolStorage.flow;
+            theFlow = theFlow + 0.05;
+            theFlow = theFlow % 360;
+            fill(gCurrentColor);
+            stroke(gCurrentColor);
+            ellipse(x, y, 10 + sin(theFlow) * 10, 10 + sin(theFlow) * 10);
+            theTool.toolStorage.flow = theFlow;
+        },
+        releaseMe: function() {
+            theTool = TOOLS[gCurrentMainTool];
+            theTool.toolStorage.flow = 0;
+        }
+    },
+    {
+        radius: new ToolControl ("Radius",
+            1, 1, 64),
+        opacity: new ToolControl ("Opacity",
+            192, 1, 255)
+    },
+    {
+        flow: 0
     },
     0);
 //-----------------------------------------------------------------------------
@@ -670,9 +684,9 @@ var shadeTool = new Tool('Shading Tool',
 //-----------------------------------------------------------------------------
 var showToolControls = function(){
     var tctSpan = document.getElementById("toolControlTitleSpan");
-    tctSpan.textContent = TOOLS[gCurrentMainTool].toolName;
+    tctSpan.innerText = TOOLS[gCurrentMainTool].toolName;
     var theDiv = document.getElementById("toolControlsSpan");
-    theDiv.textContent = "";
+    theDiv.innerText = "";
     for (var theControl in TOOLS[gCurrentMainTool].toolControls){
         var theNewDiv = document.createElement("div");
         theNewDiv.className = "controlDiv";
@@ -883,13 +897,8 @@ mouseReleased = function(){
                 // so we can scrap everything after this point
                 gCanvii = gCanvii.slice(0, gCurrentCanvas+1);
             }
-            if (gCurrentCanvas >= MAX_UNDO_LEVELS){
-                gCanvii.shift();
-                gCanvii.push(saveCanvas());
-            } else {
-                gCanvii.push(saveCanvas());
-                gCurrentCanvas++;
-            }
+            gCanvii.push(saveCanvas());
+            gCurrentCanvas++;
             doCurrentTool.releaseMe()
         } else {
             doCurrentTool.releaseMe();
@@ -966,6 +975,7 @@ var setupTools = function(){
         confettiTool,
         imageTool,
         stamperTool,
+        newSplatterTool,
         cloneBrushTool,
     ];
     
